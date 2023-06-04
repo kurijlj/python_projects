@@ -2,81 +2,92 @@
 """TODO: Put module docstring HERE.
 """
 
-# =============================================================================
-# Copyright (C) <yyyy> <Author Name> <author@mail.com>
+# ==============================================================================
 #
-# This file is part of <program name>.
+# Copyright (C) 2023 Ljubomir Kurij <ljubomir_kurij@protonmail.com>
 #
-# This program is free software: you can redistribute it and/or modify it under
-# the terms of the GNU General Public License as published by the Free Software
-# Foundation, either version 3 of the License, or (at your option)
-# any later version.
-# This program is distributed in the hope that it will be useful, but
+# This file is part of Password Manager.
+#
+# Password Manager is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the Free
+# Software Foundation, either version 3 of the License, or (at your option) any
+# later version.
+#
+# Password Manager is distributed in the hope that it will be useful, but
 # WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-# FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
-# more details.
+# FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+# details.
+#
 # You should have received a copy of the GNU General Public License along with
-# this program.  If not, see <http://www.gnu.org/licenses/>.
+# Foobar. If not, see <https://www.gnu.org/licenses/>.
 #
-# =============================================================================
+# ==============================================================================
 
 
-# =============================================================================
+# ==============================================================================
 #
-# <Put documentation here>
+# 2023-05-30 Ljubomir Kurij <ljubomir_kurij@protonmail.com>
 #
-# <yyyy>-<mm>-<dd> <Author Name> <author@mail.com>
+# * password_manager.py: created.
 #
-# * <programfilename>.py: created.
-#
-# =============================================================================
+# ==============================================================================
 
 
-# ============================================================================
+# ==============================================================================
 #
 # TODO:
 #
 #
-# ============================================================================
+# ==============================================================================
 
 
-# ============================================================================
+# ==============================================================================
 #
 # References (this section should be deleted in the release version)
 #
 #
-# ============================================================================
+# ==============================================================================
 
 
-# =============================================================================
+# ==============================================================================
 # Modules import section
-# =============================================================================
+# ==============================================================================
 
 import argparse
 import actions as ac
 import validators as vd
 
 
-# =============================================================================
-# Global constants
-# =============================================================================
-
-
-# =============================================================================
+# ==============================================================================
 # Utility classes and functions
-# =============================================================================
+# ==============================================================================
 
 def _format_epilog(epilog_addition, bug_mail):
-    """Formatter for generating help epilogue text. Help epilogue text is an
-    additional description of the program that is displayed after the
-    description of the arguments. Usually it consists only of line informing
-    to which email address to report bugs to, or it can be completely
-    omitted.
+    """Format epilogue text.
 
-    Depending on provided parameters function will properly format epilogue
-    text and return string containing formatted text. If none of the
-    parameters are supplied the function will return None which is default
-    value for epilog parameter when constructing parser object.
+    Help epilogue text is an additional description of the program that is
+    displayed after the description of the arguments. Usually it consists only
+    of line informing to which email address to report bugs to, or it can be
+    completely omitted.
+
+    Depending on provided parameters function will properly format epilogue text
+    and return string containing formatted text. If none of the parameters are
+    supplied the function will return None which is default value for epilog
+    parameter when constructing parser object.
+
+    Parameters
+    ----------
+    epilog_addition : str
+        Additional description of the program that will be displayed after the
+        description of the arguments.
+
+    bug_mail : str
+        Email address to which bugs should be reported.
+
+    Returns
+    -------
+    str
+        Formatted epilogue text.
     """
 
     fmt_mail = None
@@ -101,9 +112,8 @@ def _format_epilog(epilog_addition, bug_mail):
 
     return fmt_eplg
 
-
 class AppDoc():
-    """Utility clas to store and pass application relevant documentation to the
+    """Utility class to store and pass application relevant documentation to the
     MainApp class constructor.
     """
 
@@ -111,21 +121,19 @@ class AppDoc():
         self._docs = dict()
 
         # Initialize mandatory object attributes with some common values ...
-        self._docs['appname'] = 'app'
-        self._docs['description'] = 'Python framework for developing CLI '\
-            + 'applications using argp option parsing\n'\
-            + 'engine for parsing command line options to the application.\n'\
-            + '\nMandatory arguments to long options are mandatory for short '\
+        self._docs['appname'] = 'password_manager'
+        self._docs['description'] = 'A simple password management app. \n\n'\
+            + 'Mandatory arguments to long options are mandatory for short '\
             + 'options too.'
         self._docs['license'] = 'License GPLv3+: GNU GPL version 3 or later '\
             + '<http://gnu.org/licenses/gpl.html>\n'\
             + 'This is free software: you are free to change and '\
             + 'redistribute it.\n'\
             + 'There is NO WARRANTY, to the extent permitted by law.'
-        self._docs['version'] = 'i.i'
-        self._docs['year'] = 'yyyy'
-        self._docs['author'] = 'Author Name'
-        self._docs['mail'] = 'author@mail.com'
+        self._docs['version'] = '0.1'
+        self._docs['year'] = '2023'
+        self._docs['author'] = 'Ljubomir Kurij'
+        self._docs['mail'] = 'ljubomir_kurij@protonmail.com'
 
         # and optional object attributes with None.
         self._docs['epilog'] = None
@@ -273,21 +281,22 @@ class AppDoc():
         self._new_string_attribute('version', version_string)
 
 
-# =============================================================================
+# ==============================================================================
 # App class
-# =============================================================================
+# ==============================================================================
 
 class MainApp():
-    """Application main class. It is used to set application documentation,
-    instantiate arguments parser and parse arguments. Then, depending on the
-    user input it instantiates proper application action to handle and process
-    user input.
+    """Application main class.
+    
+    It is used to set application documentation, instantiate arguments parser
+    and parse arguments. Then, depending on the user input it instantiates
+    proper application action to handle and process user input.
 
     Constructor accepts only one mandatory argument of type AppDoc. If non
     AppDoc object passed as argument it raises TypeError.
     """
 
-    def __init__(self, doc):
+    def __init__(self: MainApp, doc: AppDoc):
 
         if not isinstance(doc, AppDoc):
             raise TypeError(
@@ -304,7 +313,7 @@ class MainApp():
             )
 
         # Since we add argument options to groups by calling group
-        # method addArgument, we have to sore all that group objects
+        # method addArgument, we have to store all that group objects
         # somewhere before adding arguments. Since we want to store all
         # application relevant data in our application object we use
         # this list for that purpose.
@@ -342,6 +351,10 @@ class MainApp():
         return group
 
     def _group_by_title(self, title):
+        """Returns group object by its title. If group with given title
+        doesn't exist return None.
+        """
+
         group = None
 
         for item in self._arg_groups:
@@ -398,37 +411,26 @@ class MainApp():
             self._action = ac.MainAction(self._parser.exit)
             self._action.addAppName(self._doc.appname)
 
-            single = vd.ProgramOption(
-                vd.UserInput(arguments.single_choice),
-                vd.ValidateInput()
-                )
-            self._action.addUserOption(
-                'single_choice',
-                single
-                )
-
-            multi = vd.ProgramOption(
-                vd.UserInput(arguments.multi_choice),
-                vd.ValidateInput()
-                )
-            self._action.addUserOption(
-                'multi_choice',
-                multi
-                )
-
-            number = vd.ProgramOption(
-                vd.UserInput(arguments.number_option),
-                vd.ValidateNumericalInput(
-                    min_val=0.0,
-                    max_val=5.0,
-                    incl_min=False,
-                    incl_max=True,
+            db_file = vd.ProgramOption(
+                vd.UserInput(arguments.ps_db_file),
+                vd.ValidateFileInput(
+                    accept_none=False,
+                    existent=True,
+                    file_type='bkp',
                     )
                 )
             self._action.addUserOption(
-                'number_option',
-                number,
-                2
+                'ps_db_file',
+                db_file
+                )
+
+            passphrase = vd.ProgramOption(
+                vd.UserInput(arguments.passphrase),
+                vd.ValidateStringInput()
+                )
+            self._action.addUserOption(
+                'passphrase',
+                passphrase
                 )
 
             self._action.validateOptionArguments()
@@ -440,9 +442,9 @@ class MainApp():
         self._action.execute()
 
 
-# =============================================================================
+# ==============================================================================
 # Script main body
-# =============================================================================
+# ==============================================================================
 
 if __name__ == '__main__':
     documentation = AppDoc()
@@ -467,39 +469,21 @@ if __name__ == '__main__':
         group='general options'
         )
     program.addArgument(
-        '-C', '--choose-from-list',
+        '-F', '--password-database-file',
         action='store',
         type=str,
-        choices=('option_1', 'option_2', 'option_3'),
-        help='sample select from list of options. Supported values '
-        + 'are: \'option_1\', \'option_2\', \'option_2\'',
-        metavar='SELECTION',
-        dest='single_choice',
+        help='Passwords database file (*.bkp)',
+        metavar='PS_DB_FILE',
+        dest='ps_db_file',
         group='app specific options'
         )
     program.addArgument(
-        '-M', '--multi-choice-from-list',
+        '-P', '--passphrase',
         action='store',
-        nargs='*',  # Enables selection of unlimited multiple options.
         type=str,
-        choices=('option_1', 'option_2', 'option_3'),
-        help='sample multi-select from list of options. Supported values '
-        + 'are: \'option_1\', \'option_2\', \'option_2\'',
-        metavar='SELECTION',
-        dest='multi_choice',
-        group='app specific options'
-        )
-    program.addArgument(
-        '-N', '--number-option',
-        action='store',
-        nargs='*',  # Enables selection of unlimited multiple options.
-        # default=3.14,
-        type=float,
-        help='sample option for passing numerical values (int or float).'
-        + 'It can be any floating point value within range '
-        + '0.0 < NUMBER <= 5.0',
-        metavar='NUMBER',
-        dest='number_option',
+        help='Passphrase for passwords database file',
+        metavar='PASSPHRASE',
+        dest='passphrase',
         group='app specific options'
         )
 

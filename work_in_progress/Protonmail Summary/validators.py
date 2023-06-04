@@ -294,7 +294,7 @@ class ValidateFileInput(ValidateInput):
                 if not path.exists():
                     if self._existent:
                         self._message = 'File with given path \'{0}\' '\
-                            .format(path.resolve())
+                            .format(path.resolve())\
                             + 'does not exist'
 
                         return False
@@ -305,7 +305,7 @@ class ValidateFileInput(ValidateInput):
 
                 # Check if we are dealing with file at all.
                 if not path.is_file():
-                    self._message = Given path \'{0}\' is not a file'\
+                    self._message = 'Given path \'{0}\' is not a file'\
                     .format(path.resolve())
 
                     return False
@@ -314,7 +314,7 @@ class ValidateFileInput(ValidateInput):
                 # given extension.
                 if self._type is not None and path.suffix[1:] != self._type:
                     self._message = 'File with path \'{0}\' is not of '\
-                        .format(path.resolve())
+                        .format(path.resolve())\
                         + 'required file type ({0})'.format(self._type)
 
                     return False
