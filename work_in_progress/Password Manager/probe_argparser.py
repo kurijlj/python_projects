@@ -9,7 +9,9 @@ if __name__ == "__main__":
         formatter_class = ap.RawDescriptionHelpFormatter,
     )
 
-    parser.add_argument(
+    general_group = parser.add_argument_group("General Options")
+
+    general_group.add_argument(
         "-V", "--version",
         action = "version",
         help = "show program version",
@@ -17,4 +19,3 @@ if __name__ == "__main__":
     )
 
     parser.parse_args()
-    parser.print_usage()

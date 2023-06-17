@@ -4,7 +4,7 @@
 
 # ==============================================================================
 #
-# Copyright (C) 2020 Ljubomir Kurij <ljubomir_kurij@protonmail.com>
+# Copyright (C) 2023 Ljubomir Kurij <ljubomir_kurij@protonmail.com>
 #
 # This file is part of Password Manager.
 #
@@ -26,7 +26,7 @@
 
 # ==============================================================================
 #
-# 2020-10-24 Ljubomir Kurij <ljubomir_kurij@protonmail.com.com>
+# 2020-10-24 Ljubomir Kurij <ljubomir_kurij@protonmail.com>
 #
 # * validators.py: created.
 #
