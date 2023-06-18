@@ -1,4 +1,4 @@
-"""user_input.py
+"""user_input.py - Wrapper class for user input.
 
 This module provides a wrapper class for user input. It is used to store user
 input in a tuple, and to provide a way to iterate over the tuple. It also
@@ -8,20 +8,23 @@ Examples:
     >>> user_input = UserInput('foo', 'bar')
     >>> print(user_input)
     ('foo', 'bar')
+
+Author:
+    Ljubomir Kurij <
 """
 
 # ==============================================================================
 #
 # Copyright (C) 2023 Ljubomir Kurij <ljubomir_kurij@protonmail.com>
 #
-# This file is part of Password Manager.
+# user_input.py - Wrapper class for user input.
 #
-# Password Manager is free software: you can redistribute it and/or modify it
+# 'user_input.py' is free software: you can redistribute it and/or modify it
 # under the terms of the GNU General Public License as published by the Free
 # Software Foundation, either version 3 of the License, or (at your option) any
 # later version.
 #
-# Password Manager is distributed in the hope that it will be useful, but
+# 'user_input.py' is distributed in the hope that it will be useful, but
 # WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
 # FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
 # details.
@@ -46,7 +49,7 @@ Examples:
 # ==============================================================================
 
 # ==============================================================================
-# User Input Class Section
+# Classes Section
 # ==============================================================================
 class UserInput():
     """Wrapper class for user input.
@@ -81,7 +84,8 @@ class UserInput():
     def __str__(self) -> str:
         """Returns a string representation of the user input data.
 
-        It invokes the __str__ method of the tuple that stores the user input data, to format the string representation of the data.
+        It invokes the __str__ method of the tuple that stores the user input
+        data, to format the string representation of the data.
 
         Returns:
             str: A string representation of the user input data.
@@ -167,6 +171,20 @@ class UserInput():
 
         return self._data.__getitem__(key)
     
+    def __len__(self) -> int:
+        """Returns the length of the user input data.
+
+        Returns:
+            int: The length of the user input data.
+
+        Examples:
+            >>> user_input = UserInput('foo', 'bar')
+            >>> print(len(user_input))
+            2
+        """
+
+        return len(self._data)
+
     @property
     def data(self) -> tuple:
         """Returns the user input data stored in the UserInput object.
@@ -197,22 +215,6 @@ class UserInput():
         else:
             return self._data
     
-    @property
-    def length(self) -> int:
-        """Returns the length of the user input data.
-
-        Returns:
-            int: The length of the user input data.
-
-        Examples:
-            >>> user_input = UserInput('foo', 'bar')
-            >>> print(user_input.length)
-            2
-        """
-
-        return len(self._data)
-    
-    @property
     def is_empty(self) -> bool:
         """Returns True if the UserInput object is empty, False otherwise.
 

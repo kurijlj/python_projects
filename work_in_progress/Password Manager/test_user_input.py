@@ -51,5 +51,43 @@ class TestUserInput(unittest.TestCase):
         self.assertEqual(user_input[0], 'foo')
         self.assertEqual(user_input[1], 'bar')
 
+    def test_getitem_error(self):
+        """Tests the __getitem__ method when an invalid key is used."""
+
+        user_input = UserInput('foo', 'bar')
+
+        with self.assertRaises(IndexError):
+            user_input[2]
+    
+    def test_len(self):
+        """Tests the __len__ method."""
+
+        user_input = UserInput('foo', 'bar')
+
+        self.assertEqual(len(user_input), 2)
+    
+    def test_len_error(self):
+        """Tests the __len__ method when an invalid key is used."""
+
+        user_input = UserInput('foo', 'bar')
+
+        with self.assertRaises(TypeError):
+            len(user_input, 2)
+    
+    def test_is_empty(self):
+        """Tests the is_empty method."""
+
+        user_input = UserInput('foo', 'bar')
+
+        self.assertFalse(user_input.is_empty())
+    
+    def test_is_empty_true(self):
+        """Tests the is_empty method when the user input is empty."""
+
+        user_input = UserInput()
+
+        self.assertTrue(user_input.is_empty())
+
+
 if __name__ == '__main__':
     unittest.main()
