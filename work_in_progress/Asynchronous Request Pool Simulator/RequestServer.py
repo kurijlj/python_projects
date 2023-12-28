@@ -36,6 +36,13 @@
 #
 # TODO:
 #
+# * Implement a POST request handler for adding requests to the queue.
+#
+# * Implement request pool. Requests are added to the pool when they are
+#   received alongside with the IP address of the client. Each client can have
+#   certian number of requests per second. Requests are removed from the pool
+#   when they are processed. If max number of requests per minute is reached,
+#   further requests are rejected until the time window is over.
 #
 # =============================================================================
 
