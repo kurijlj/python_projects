@@ -90,7 +90,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from starlette import status
-from time import perf_counter, sleep
+from time import perf_counter, sleep, strftime
+import logging
 
 
 # =============================================================================
@@ -189,6 +190,13 @@ class TimerQueue:
                 rp = self._queue.pop(0)['pool']
                 rp.reset_pool()
                 self._queue.append({'pool': rp, 'start': perf_counter()})
+    
+    def find(self, ip: str):
+        """Find the request pool with the given IP address."""
+        for item in self._queue:
+            if item['pool'].ip == ip:
+                return item['pool']
+        return None
 
 
 # =============================================================================
@@ -247,7 +255,7 @@ class IncomingRequest(BaseModel):
 #   - None
 #
 # -----------------------------------------------------------------------------
-def timers_check_loop():
+def timers_check_loop() -> None:
     """Check for elapsed timers."""
     while True:
         _queue.check_elapsed()
@@ -258,6 +266,11 @@ def timers_check_loop():
 # Global constants
 # =============================================================================
 TPM = 5
+logging.basicConfig(
+    filename='served_requests.log',
+    encoding='utf-8',
+    level=logging.DEBUG
+    )
 
 
 # =============================================================================
@@ -303,11 +316,12 @@ async def queue_status():
                                 <th>IP</th>
                                 <th>Tokens</th>
                             </tr>"""
-    for item in _queue:
-        result += f"""<tr>
-                          <td>{item['pool'].ip}</td>
-                          <td>{item['pool'].tokens}</td>
-                      </tr>"""
+    for item in sorted(_queue, key=lambda x: x['pool'].ip):
+        if item is not None:
+            result += f"""<tr>
+                              <td>{item['pool'].ip}</td>
+                              <td>{item['pool'].tokens}</td>
+                          </tr>"""
     result += """           </table>
                         </body>
                     </html>"""
@@ -325,9 +339,21 @@ async def make_a_request(request: IncomingRequest):
         for item in _queue:
             if item['pool'].ip == rp.ip:
                 if item['pool'].tokens + rp.tokens > TPM:
+                    logging.info("{0},REJECTED,{1},{2}"\
+                        .format(
+                            strftime("%Y-%m-%d %H:%M:%S"),
+                            rp.ip,
+                            rp.tokens
+                            ))
                     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                                         detail='RPM exceeded')
                 else:
+                    logging.info("{0},ACCEPTED,{1},{2}"\
+                        .format(
+                            strftime("%Y-%m-%d %H:%M:%S"),
+                            rp.ip,
+                            rp.tokens
+                            ))
                     item['pool'].tokens += rp.tokens
                     return
     
