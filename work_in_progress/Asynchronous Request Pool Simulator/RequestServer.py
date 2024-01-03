@@ -124,7 +124,7 @@ class RequestPool:
     ip: str
     tokens: int
 
-    def __init__(self, ip: str, tokens: int):
+    def __init__(self, ip: str = "", tokens: int = 0):
         """Initialize the Request object."""
         self.ip = ip
         self.tokens = tokens
@@ -136,6 +136,14 @@ class RequestPool:
     def reset_pool(self):
         """Reset the request pool."""
         self.tokens = 0
+
+    def none(self):
+        """Return True if the request pool is None."""
+        return "" == self.ip
+    
+    def not_none(self):
+        """Return True if the request pool is not None."""
+        return "" != self.ip
 
 # -----------------------------------------------------------------------------
 # Class: TimerQueue
@@ -191,12 +199,14 @@ class TimerQueue:
                 rp.reset_pool()
                 self._queue.append({'pool': rp, 'start': perf_counter()})
     
-    def find(self, ip: str):
+    def find(self, ip: str) -> RequestPool:
         """Find the request pool with the given IP address."""
         for item in self._queue:
             if item['pool'].ip == ip:
                 return item['pool']
-        return None
+        
+        # Otherwise, return None Pool (i.e., RequestPool with empty IP address)
+        return RequestPool()
 
 
 # =============================================================================
@@ -266,11 +276,6 @@ def timers_check_loop() -> None:
 # Global constants
 # =============================================================================
 TPM = 5
-logging.basicConfig(
-    filename='served_requests.log',
-    encoding='utf-8',
-    level=logging.DEBUG
-    )
 
 
 # =============================================================================
@@ -295,6 +300,9 @@ async def queue_status():
                     <head>
                         <title>Request Queue Status</title>
                         <style>
+                            body {
+                                font-family: Arial, Helvetica, sans-serif;
+                            }
                             h1 {
                                 text-align: center;
                             }
@@ -310,7 +318,7 @@ async def queue_status():
                         </style>
                     </head>
                     <body>
-                    `   <h1>Request Queue Status</h1>
+                        <h1>Request Queue Status</h1>
                         <table>
                             <tr>
                                 <th>IP</th>
@@ -339,21 +347,9 @@ async def make_a_request(request: IncomingRequest):
         for item in _queue:
             if item['pool'].ip == rp.ip:
                 if item['pool'].tokens + rp.tokens > TPM:
-                    logging.info("{0},REJECTED,{1},{2}"\
-                        .format(
-                            strftime("%Y-%m-%d %H:%M:%S"),
-                            rp.ip,
-                            rp.tokens
-                            ))
                     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                                         detail='RPM exceeded')
                 else:
-                    logging.info("{0},ACCEPTED,{1},{2}"\
-                        .format(
-                            strftime("%Y-%m-%d %H:%M:%S"),
-                            rp.ip,
-                            rp.tokens
-                            ))
                     item['pool'].tokens += rp.tokens
                     return
     
@@ -373,6 +369,8 @@ if __name__ == '__main__':
     import threading
     check_loop_thread = threading.Thread(target=timers_check_loop, daemon=True)
     check_loop_thread.start()
+
+    # Add the logging handler to the web app ----------------------------------
 
     # Run the web app ---------------------------------------------------------
     uvicorn.run(_app, host='0.0.0.0', port=8000)

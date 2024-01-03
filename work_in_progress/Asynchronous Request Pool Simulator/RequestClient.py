@@ -1,10 +1,4 @@
 # !/usr/bin/env python3
-from ipaddress import ip_address
-import queue
-import re
-from time import perf_counter, sleep
-
-from sympy import O, Ge
 """TODO: Put module docstring HERE.
 """
 
@@ -432,6 +426,12 @@ def main():
     while not queue.is_empty():
         # Remove the request from the queue.
         request = queue.remove()
+        print("{} Requests in queue: {}"\
+              .format(
+                  strftime("%Y-%m-%d %H:%M:%S"),
+                  len(queue)
+                  )
+             )
         
         # If the request is not None, print it.
         if request.not_none():
