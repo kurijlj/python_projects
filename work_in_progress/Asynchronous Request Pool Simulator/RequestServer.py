@@ -86,7 +86,7 @@ contains a main program that starts the server and the timer queue loop.
 # =============================================================================
 # Modules import section
 # =============================================================================
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from starlette import status
@@ -231,15 +231,13 @@ class TimerQueue:
 #   - model_dump:  return a dictionary representation of the Request object.
 #
 # -----------------------------------------------------------------------------
-class IncomingRequest(BaseModel):
+class IncomingPost(BaseModel):
     """Request data model."""
-    ip: str = Field(min_length=7, max_length=15)
     tokens: int = Field(gt=0)
 
     class Config:
         json_schema_extra = {
             'example': {
-                'ip': '192.168.0.1',
                 'tokens': 5
             }
         }
@@ -337,18 +335,18 @@ async def queue_status():
     return result
         
 # Create the API entry for adding requests to the pool ------------------------
-@_app.post('/request', status_code=status.HTTP_201_CREATED)
-async def make_a_request(request: IncomingRequest):
+@_app.post('/post', status_code=status.HTTP_201_CREATED)
+async def process_post(post: IncomingPost, request: Request):
     """Add a request to the queue."""
     # Create a new request object
-    rp = RequestPool(**request.model_dump())
+    rp = RequestPool(request.client.host, post.tokens)
 
     if _queue:
         for item in _queue:
             if item['pool'].ip == rp.ip:
                 if item['pool'].tokens + rp.tokens > TPM:
                     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                                        detail='RPM exceeded')
+                                        detail='TPM exceeded')
                 else:
                     item['pool'].tokens += rp.tokens
                     return
