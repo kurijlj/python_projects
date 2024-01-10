@@ -27,7 +27,7 @@
 #
 # 2024-01-09 Ljubomir Kurij <ljubomi_kurij@protonmail.com>
 #
-# * AsynchronousPostServerDemo.py: created.
+# * TestServer.py: created.
 #
 # =============================================================================
 
@@ -71,8 +71,27 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from starlette import status
-from time import perf_counter, strftime
+from time import perf_counter
 import asyncio
+import logging
+
+
+# =============================================================================
+# Logging section
+# =============================================================================
+# Create a logger object ------------------------------------------------------
+_logger = logging.getLogger(__name__)
+_logger.setLevel(logging.DEBUG)
+_logger.propagate = False
+_console_handler = logging.StreamHandler()
+_console_handler.setLevel(logging.DEBUG)
+_console_handler.setFormatter(
+    logging.Formatter(
+        fmt="%(levelname)s:\t%(asctime)s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+        )
+    )
+_logger.addHandler(_console_handler)
 
 
 # =============================================================================
@@ -147,40 +166,31 @@ class TokenBucket:
         if "_last_refresh_time" not in self.__dict__:
             self._last_refresh_time = perf_counter()
             # self._last_refresh_time = asyncio.get_event_loop().time()
-            print("{} Time counter initialized to {}"\
-                    .format(
-                        strftime("%Y-%m-%d %H:%M:%S"),
-                        self._last_refresh_time
-                        )
+            _logger.debug(
+                "Time counter initialized to {}."\
+                    .format(self._last_refresh_time)
                 )
+
 
         # Reset the token bucket if time limit has passed --------------------
         current_time = perf_counter()
         # current_time = asyncio.get_event_loop().time()
         elapsed_time = current_time - self._last_refresh_time
-        print("{} Elapsed time: {}"\
-                .format(
-                    strftime("%Y-%m-%d %H:%M:%S"),
-                    elapsed_time
-                    )
-            )
+        _logger.debug(f"Elapsed time: {elapsed_time:.2f} sec.")
+
         if elapsed_time > self._time_limit:
-            print("{} Token bucket reset."\
-                    .format(
-                        strftime("%Y-%m-%d %H:%M:%S")
-                        )
-                )
+            _logger.debug("Token bucket reset.")
             self._status = self._max_tpm
-            self._last_refresh_time = current_time
-            elapsed_time = 0
+            # Ensure time counting is performed in equidistant intervals
+            self._last_refresh_time +=  self._time_limit
+            elapsed_time = current_time - self._last_refresh_time
 
         if 0 > self._status - tokens:
             # Raise an exception if not enough tokens available
-            print("{} Token limit exceeded: Not enough tokens available {}."\
-                    .format(
-                        strftime("%Y-%m-%d %H:%M:%S"),
-                        self._status - tokens
-                        )
+            _logger.debug(
+                f"Token limit exceeded: "\
+                f"Token bucket status: {self._status}, "\
+                f"Tokens requested: {tokens}."
                 )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -189,17 +199,9 @@ class TokenBucket:
 
         else:
             # Consume tokens
-            print("{} Consuming {} tokens."\
-                    .format(
-                        strftime("%Y-%m-%d %H:%M:%S"),
-                        tokens
-                        )
-                )
+            _logger.debug(f"Consuming {tokens} tokens.")
 
             self._status -= tokens
-
-            # if 0 > self._status:
-            #     self._status = 0
     
 # -----------------------------------------------------------------------------
 # Class: ClientPost
@@ -219,7 +221,7 @@ class TokenBucket:
 #
 # -----------------------------------------------------------------------------
 class ClientPost(BaseModel):
-    """Request data model."""
+    """ClientPost data model."""
     tokens: int = Field(gt=0)
 
     class Config:
@@ -303,21 +305,8 @@ async def process_post(post: ClientPost, request: Request):
         _bucket_table[request.client.host] = TokenBucket(TPM)
 
     # Consume tokens from the bucket
-    print("{} Consuming {} tokens from {}."\
-            .format(
-                strftime("%Y-%m-%d %H:%M:%S"),
-                post.tokens,
-                request.client.host
-                )
-        )
-    # try:
-    #     await _bucket_table[request.client.host].consume(post.tokens)
-    
-    # finally:
-    #     return {
-    #         "ip": request.client.host,
-    #         "tokens": post.tokens
-    #     }
+    _logger.debug(f"Consuming {post.tokens} tokens from {request.client.host}.")
+
     await _bucket_table[request.client.host].consume(post.tokens)
 
 
@@ -336,4 +325,4 @@ if __name__ == '__main__':
     main()
 
 
-# End of file 'AsynchronousPostServerDemo.py'
+# End of file 'TestServer.py'

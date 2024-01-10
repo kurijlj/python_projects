@@ -25,9 +25,9 @@
 
 # =============================================================================
 #
-# 2024-01-07 Ljubomir Kurij <ljubomi_kurij@protonmail.com>
+# 2024-01-09 Ljubomir Kurij <ljubomi_kurij@protonmail.com>
 #
-# * AsynchronousRequestClient.py: created.
+# * ClientBot.py: created.
 #
 # =============================================================================
 
@@ -70,7 +70,17 @@ import heapq
 import logging
 from pprint import pprint
 from pydantic import BaseModel, Field
-from time import perf_counter, strftime
+from time import perf_counter
+
+
+# =============================================================================
+# Logging configuration section
+# =============================================================================
+logging.basicConfig(
+    format="%(levelname)s: %(asctime)s %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    level=logging.DEBUG
+    )
 
 
 # =============================================================================
@@ -93,7 +103,6 @@ class PendingTask:
     """
     _priority: int
     _target: str
-    _source: str
     _total_tokens: int
     _request_tokens: int
 
@@ -107,16 +116,11 @@ class PendingTask:
     class Validator(BaseModel):
         priority: int = Field(default=0, ge=0, le=5)
         target: str = Field(
-            # pattern=r"^(https?|ftp):\/\/[^\s/$.?#].[^\s]*$"
             pattern = r"(^$)|"\
                       r"(?i)\b((?:https?://|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]"\
                       r"{2,4}/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*"\
                       r"\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]"\
                       r"{};:'\".,<?«»“”‘’]))"
-            )
-        source: str = Field(
-            pattern = r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}"\
-                      r"(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
             )
         total_tokens: int = Field(default=1, ge=1)
         request_tokens: int = Field(default=1, ge=1)
@@ -136,7 +140,6 @@ class PendingTask:
             self,
             priority: int = 0,
             target: str = "",
-            source: str = "",
             total_tokens: int = 1,
             request_tokens: int = 1
             ) -> None:
@@ -146,7 +149,6 @@ class PendingTask:
         validator = self.Validator(
             priority=priority,
             target=target,
-            source=source,
             total_tokens=total_tokens,
             request_tokens=request_tokens
             )
@@ -165,7 +167,6 @@ class PendingTask:
         # Assign the validated data --------------------------------------------
         self._priority = validator.priority
         self._target = validator.target
-        self._source = validator.source
         self._total_tokens = validator.total_tokens
         self._request_tokens = validator.request_tokens
 
@@ -181,13 +182,11 @@ class PendingTask:
     #
     # -------------------------------------------------------------------------
     def __repr__(self) -> str:
-        """TODO: Put method docstring HERE."""
         return f"PendingTask("\
-               f"{self._priority}, "\
-               f"{self._target}, "\
-               f"{self._source}, "\
-               f"{self._total_tokens}, "\
-               f"{self._request_tokens}"\
+               f"priority={self._priority}, "\
+               f"target={self._target}, " \
+               f"total_tokens={self._total_tokens}, "\
+               f"request_tokens={self._request_tokens}"\
                f")"
     
     # -------------------------------------------------------------------------
@@ -202,13 +201,11 @@ class PendingTask:
     #
     # -------------------------------------------------------------------------
     def __str__(self) -> str:
-        """TODO: Put method docstring HERE."""
         return f"PendingTask("\
-               f"priority={self._priority}, "\
-               f"target={self._target}, " \
-               f"{self._source}, "\
-               f"total_tokens={self._total_tokens}, "\
-               f"request_tokens={self._request_tokens}"\
+               f"{self._priority}, "\
+               f"{self._target}, "\
+               f"{self._total_tokens}, "\
+               f"{self._request_tokens}"\
                f")"
     
     # -------------------------------------------------------------------------
@@ -324,17 +321,6 @@ class PendingTask:
         return self._target
     
     # -------------------------------------------------------------------------
-    # Property: source
-    # -------------------------------------------------------------------------
-    #
-    # Description:
-    #
-    # -------------------------------------------------------------------------
-    @property
-    def source(self) -> str:
-        return self._source
-
-    # -------------------------------------------------------------------------
     # Property: total_tokens
     # -------------------------------------------------------------------------
     #
@@ -365,6 +351,15 @@ class PendingTask:
     # -------------------------------------------------------------------------
     @priority.setter
     def priority(self, value: int):
+        # Validate the input data
+        validator = self.Validator(
+            priority=value,
+            target=self._target,
+            total_tokens=self._total_tokens,
+            request_tokens=self._request_tokens
+            )
+        
+        # Assign the validated data
         self._priority = value
     
     # -------------------------------------------------------------------------
@@ -398,7 +393,7 @@ class PendingTask:
         return "" != self._target
     
     # -------------------------------------------------------------------------
-    # Method: payload_as_dict
+    # Method: post
     # -------------------------------------------------------------------------
     #
     # Description:
@@ -408,199 +403,32 @@ class PendingTask:
     # Returns:
     #
     # -------------------------------------------------------------------------
-    def payload_as_dict(self) -> dict:
+    async def post(self, session: aiohttp.ClientSession) -> dict:
         """TODO: Put method docstring HERE."""
-        return {
-            "ip": self._source,
-            "tokens": self._request_tokens
-            }
-    
-    # -------------------------------------------------------------------------
-    # Method: payload_as_json
-    # -------------------------------------------------------------------------
-    #
-    # Description:
-    #
-    # Parameters:
-    #
-    # Returns:
-    #
-    # -------------------------------------------------------------------------
-    def payload_as_json(self) -> str:
-        """TODO: Put method docstring HERE."""
-        return f"{{"\
-               f"\"ip\": \"{self._source}\", "\
-               f"\"tokens\": {self._request_tokens}"\
-               f"}}"
 
+        # Validate the input data
+        if not isinstance(session, aiohttp.ClientSession):
+            raise TypeError(
+                "session must be an instance of "\
+                "aiohttp.ClientSession"
+                )
 
-class PendingTaskQueue:
-    """TODO: Put class docstring HERE.
-    """
-    _queue: list
+        result = {}
 
-    # -------------------------------------------------------------------------
-    # Method: __init__
-    # -------------------------------------------------------------------------
-    #
-    # Description:
-    #
-    # Parameters:
-    #
-    # Returns:
-    #
-    # -------------------------------------------------------------------------
-    def __init__(self) -> None:
-        self._queue = []
-    
-    # -------------------------------------------------------------------------
-    # Method: __repr__
-    # -------------------------------------------------------------------------
-    #
-    # Description:
-    #
-    # Parameters:
-    #
-    # Returns:
-    #
-    # -------------------------------------------------------------------------
-    def __repr__(self) -> str:
-        result = "PendingTaskQueue(\n"
-        if 0 < len(self._queue):
-            for task in self._queue:
-                result += f"{task},\n"
-            result = result[:-1]  # Remove the last comma and space
-        result += ")"
-
+        if self.not_none():
+            if not session.closed:
+                async with session.post(
+                        self._target,
+                        json={"tokens": self.request_tokens}
+                        ) as response:
+                    response.raise_for_status()
+                    result = await response.json()
+        
         return result
-    
-    # -------------------------------------------------------------------------
-    # Method: __str__
-    # -------------------------------------------------------------------------
-    #
-    # Description:
-    #
-    # Parameters:
-    #
-    # Returns:
-    #
-    # -------------------------------------------------------------------------
-    def __str__(self) -> str:
-        result = "PendingTaskQueue("
-        if 0 < len(self._queue):
-            if 3 >= len(self._queue):
-                for task in self._queue:
-                    result += f"{task}, "
-                result = result[:-2]
-            else:
-                for task in self._queue[:3]:
-                    result += f"{task}, "
-                result = result[:-2] + ", ..."
-        result += ")"
-
-        return result
-    
-    # -------------------------------------------------------------------------
-    # Method: add
-    # -------------------------------------------------------------------------
-    #
-    # Description:
-    #
-    # Parameters:
-    #
-    # Returns:
-    #
-    # -------------------------------------------------------------------------
-    def push(self, task: PendingTask) -> None:
-        heapq.heappush(self._queue, task)
-    
-    # -------------------------------------------------------------------------
-    # Method: pop
-    # -------------------------------------------------------------------------
-    #
-    # Description:
-    #
-    # Parameters:
-    #
-    # Returns:
-    #
-    # -------------------------------------------------------------------------
-    def pop(self) -> PendingTask:
-        return heapq.heappop(self._queue)
-    
-    # -------------------------------------------------------------------------
-    # Method: peek
-    # -------------------------------------------------------------------------
-    #
-    # Description:
-    #
-    # Parameters:
-    #
-    # Returns:
-    #
-    # -------------------------------------------------------------------------
-    def peek(self) -> PendingTask:
-        return self._queue[0]
-    
-    # -------------------------------------------------------------------------
-    # Method: size
-    # -------------------------------------------------------------------------
-    #
-    # Description:
-    #
-    # Parameters:
-    #
-    # Returns:
-    #
-    # -------------------------------------------------------------------------
-    def size(self) -> int:
-        return len(self._queue)
-    
-    # -------------------------------------------------------------------------
-    # Method: empty
-    # -------------------------------------------------------------------------
-    #
-    # Description:
-    #
-    # Parameters:
-    #
-    # Returns:
-    #
-    # -------------------------------------------------------------------------
-    def empty(self) -> bool:
-        return 0 == len(self._queue)
-    
-    # -------------------------------------------------------------------------
-    # Method: clear
-    # -------------------------------------------------------------------------
-    #
-    # Description:
-    #
-    # Parameters:
-    #
-    # Returns:
-    #
-    # -------------------------------------------------------------------------
-    def clear(self) -> None:
-        self._queue.clear()
-    
-    # -------------------------------------------------------------------------
-    # Method: tasks
-    # -------------------------------------------------------------------------
-    #
-    # Description:
-    #
-    # Parameters:
-    #
-    # Returns:
-    #
-    # -------------------------------------------------------------------------
-    def tasks(self) -> list:
-        return self._queue
 
 
 # -----------------------------------------------------------------------------
-# Class: ServerRequestManager
+# Class: TaskPriorityQueue
 # -----------------------------------------------------------------------------
 #
 # Description:
@@ -610,30 +438,17 @@ class PendingTaskQueue:
 # Methods:
 #
 # -----------------------------------------------------------------------------
-class ServerRequestManager:
+class TaskPriorityQueue:
     """TODO: Put class docstring HERE.
     """
+    _queue: list
+    _time_limit: float = 60.0  # 1 minute
     _max_rpm: int
-    _rpm: int
-    _rpm_interval: float
-    _rpm_interval_start: float
-    _rpm_semaphore: asyncio.Semaphore
+    _request_bucket: int
     _max_tpm: int
-    _tpm: int
-    _tpm_interval: float
-    _tpm_interval_start: float
-    _tpm_semaphore: asyncio.Semaphore
-
-    # -------------------------------------------------------------------------
-    # Nested class: Validator
-    # -------------------------------------------------------------------------
-    #
-    # Description:
-    #
-    # -------------------------------------------------------------------------
-    class Validator(BaseModel):
-        max_rpm: int = Field(default=0, ge=0)
-        max_tpm: int = Field(default=0, ge=0)
+    _token_bucket: int
+    _rpm_last_refresh_time: float
+    _tpm_last_refresh_time: float
 
     # -------------------------------------------------------------------------
     # Method: __init__
@@ -646,21 +461,22 @@ class ServerRequestManager:
     # Returns:
     #
     # -------------------------------------------------------------------------
-    def __init__(self, max_rpm: int = 0, max_tpm: int = 0) -> None:
+    def __init__(self, max_rpm: int, max_tpm: int) -> None:
         """TODO: Put method docstring HERE."""
 
         # Validate the input data ----------------------------------------------
-        validator = self.Validator(max_rpm=max_rpm, max_tpm=max_tpm)
+        class Validator(BaseModel):
+            max_rpm: int = Field(default=1, ge=1)
+            max_tpm: int = Field(default=1, ge=1)
+        validator = Validator(max_rpm=max_rpm, max_tpm=max_tpm)
 
+        # Assign the validated data --------------------------------------------
+        self._queue = []
         self._max_rpm = validator.max_rpm
-        self._rpm = 0
-        self._rpm_interval = 60.0
-        self._rpm_interval_start = 0.0
+        self._request_bucket = validator.max_rpm
         self._max_tpm = validator.max_tpm
-        self._tpm = 0
-        self._tpm_interval = 60.0
-        self._tpm_interval_start = 0.0
-
+        self._token_bucket = validator.max_tpm
+    
     # -------------------------------------------------------------------------
     # Method: __repr__
     # -------------------------------------------------------------------------
@@ -673,13 +489,15 @@ class ServerRequestManager:
     #
     # -------------------------------------------------------------------------
     def __repr__(self) -> str:
-        """TODO: Put method docstring HERE."""
-        return f"ServerRequestManager("\
-            f"{self._max_rpm},"\
-            f"{self._rpm},"\
-            f"{self._max_tpm}"\
-            f"{self._tpm}"\
-            f")"
+        result = f"TaskPriorityQueue("\
+                 f"max_rpm={self._max_rpm}, "\
+                 f"max_tpm={self._max_tpm}"\
+                 f"queue=["\
+
+        for task in self._queue:
+            result += f"{task.__repr__()}, "
+
+        result = result[:-2] + f"])"
     
     # -------------------------------------------------------------------------
     # Method: __str__
@@ -693,14 +511,14 @@ class ServerRequestManager:
     #
     # -------------------------------------------------------------------------
     def __str__(self) -> str:
-        """TODO: Put method docstring HERE."""
-        return f"ServerRequestManager(max_rpm={self._max_rpm}, "\
-               f"rpm={self._rpm}, "\
-               f"max_tpm={self._max_tpm}, "\
-               f"tpm={self._tpm})"
+        return f"TaskPriorityQueue("\
+               f"{self._max_rpm}, "\
+               f"{self._max_tpm}, "\
+               f"{len(self._queue)}"\
+               f")"
     
     # -------------------------------------------------------------------------
-    # Method: fetch_task
+    # Method: add_task
     # -------------------------------------------------------------------------
     #
     # Description:
@@ -710,93 +528,301 @@ class ServerRequestManager:
     # Returns:
     #
     # -------------------------------------------------------------------------
-    async def fetch_task(self, task: PendingTask) -> None:
+    def add_task(self, task: PendingTask) -> None:
         """TODO: Put method docstring HERE."""
-        
-        # Initialize semaphores (if not initialized yet) ----------------------
-        if "_rpm_semaphore" not in self.__dict__:
-            self._rpm_semaphore = asyncio.Semaphore(self._max_rpm)
-        if "_tpm_semaphore" not in self.__dict__:
-            self._tpm_semaphore = asyncio.Semaphore(self._max_tpm)
 
-        # Check if semaphores need to be reset --------------------------------
+        # Validate the input data ----------------------------------------------
+        if not isinstance(task, PendingTask):
+            raise TypeError(
+                "task must be an instance of PendingTask"
+                )
+
+        # Add the task to the queue --------------------------------------------
+        heapq.heappush(self._queue, task)
+
+    # -------------------------------------------------------------------------
+    # Method: pop_task
+    # -------------------------------------------------------------------------
+    #
+    # Description:
+    #
+    # Parameters:
+    #
+    # Returns:
+    #
+    # -------------------------------------------------------------------------
+    def pop_task(self) -> PendingTask:
+        """TODO: Put method docstring HERE."""
+
+        # Pop the task from the queue ------------------------------------------
+        return heapq.heappop(self._queue)
+
+    # -------------------------------------------------------------------------
+    # Method: peek_task
+    # -------------------------------------------------------------------------
+    #
+    # Description:
+    #
+    # Parameters:
+    #
+    # Returns:
+    #
+    # -------------------------------------------------------------------------
+    def peek_task(self) -> PendingTask:
+        """TODO: Put method docstring HERE."""
+
+        # Peek the task from the queue -----------------------------------------
+        return self._queue[0]
+    
+    # -------------------------------------------------------------------------
+    # Method: is_empty
+    # -------------------------------------------------------------------------
+    #
+    # Description:
+    #
+    # Parameters:
+    #
+    # Returns:
+    #
+    # -------------------------------------------------------------------------
+    def is_empty(self) -> bool:
+        """TODO: Put method docstring HERE."""
+        return 0 == len(self._queue)
+
+    # -------------------------------------------------------------------------
+    # Method: consume
+    # -------------------------------------------------------------------------
+    #
+    # Description:
+    #
+    # Parameters:
+    #
+    # Returns:
+    #
+    # -------------------------------------------------------------------------
+    async def consume(self) -> None:
+        """TODO: Put method docstring HERE."""
+
+        # Initialize the time counters if first time consuming the queue ------
+        if "_rpm_last_refresh_time" not in self.__dict__:
+            logging.debug("Initializing counters")
+            self._rpm_last_refresh_time = perf_counter()
+            self._tpm_last_refresh_time = perf_counter()
+
+        # Update the RPM -------------------------------------------------------
         current_time = perf_counter()
-        if self._rpm_interval_start + self._rpm_interval < current_time:
-            self._rpm_interval_start = current_time
-            self._rpm = 0
-        if self._tpm_interval_start + self._tpm_interval < current_time:
-            self._tpm_interval_start = current_time
-            self._tpm = 0
+        rpm_elapsed_time = current_time - self._rpm_last_refresh_time
+        logging.debug(f"RPM elapsed time: {rpm_elapsed_time:.2f} seconds")
+        if rpm_elapsed_time > self._time_limit:
+            logging.debug("Resetting RPM bucket")
+            self._request_bucket = self._max_rpm
+            # Ensure time counting is performed in equidistant intervals
+            self._rpm_last_refresh_time += self._time_limit
+            rpm_elapsed_time = current_time - self._rpm_last_refresh_time
+
+        # Update the TPM -------------------------------------------------------
+        current_time = perf_counter()
+        tpm_elapsed_time = current_time - self._tpm_last_refresh_time
+        logging.debug(f"TPM elapsed time: {tpm_elapsed_time:.2f} seconds")
+        if tpm_elapsed_time > self._time_limit:
+            logging.debug("Resetting TPM bucket")
+            self._token_bucket = self._max_tpm
+            # Ensure time counting is performed in equidistant intervals
+            self._tpm_last_refresh_time += self._time_limit
+            tpm_elapsed_time = current_time - self._tpm_last_refresh_time
+
+        # Get current task -----------------------------------------------------
+        current = self.peek_task()
+
+        # Pause consumation if limits are reached ------------------------------
+        if 0 > self._request_bucket - 1 \
+                and 0 > self._token_bucket - current.request_tokens:
+            # Both limits exceeded. Wait until both reset.
+            logging.debug(
+                f"Both limits exceeded: "\
+                f"Request bucket: {self._request_bucket}, "\
+                f"Pending requests: {1}, "\
+                f"Token bucket: {self._token_bucket}, "\
+                f"Pending tokens: {current.request_tokens}"
+                )
+            elapsed = max(rpm_elapsed_time, tpm_elapsed_time)
+            logging.debug(
+                "Waiting {:.2f} seconds for bucket refresh"\
+                    .format(self._time_limit - elapsed + 10)
+                )
+            # Add 10 seconds to counteract the possible missmatch between the
+            # server and the client clocks.
+            await asyncio.sleep(self._time_limit - elapsed + 10)
+
+            # Reset the time counters and buckets to prevent resetting the
+            # buckets at the beginning of the next iteration, and after the
+            # dispatching of the current task.
+            self._rpm_last_refresh_time += self._time_limit
+            self._tpm_last_refresh_time += self._time_limit
+            self._request_bucket = self._max_rpm
+            self._token_bucket = self._max_tpm
         
-        async with self._rpm_semaphore, self._tpm_semaphore:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                        task.target,
-                        json=task.payload_as_dict()
-                        ) as response:
-                    print("{} fetching task: {}"\
-                          .format(strftime("%H:%M:%S"), task.__repr__()))
-                    print("{} response status: {}"\
-                          .format(strftime("%H:%M:%S"), response.status))
-                    pprint(await response.json())
+        elif 0 > self._request_bucket - 1:
+            # RPM limit exceeded. Wait until reset.
+            logging.debug(
+                f"RPM limit exceeded: "\
+                f"Request bucket: {self._request_bucket}, "\
+                f"Pending requests: {1}"
+                )
+            elapsed = rpm_elapsed_time
+            logging.debug(
+                "Waiting {:.2f} seconds for bucket refresh"\
+                    .format(self._time_limit - elapsed + 10)
+                )
+            # Add 10 seconds to counteract the possible missmatch between the
+            # server and the client clocks.
+            await asyncio.sleep(self._time_limit - elapsed + 10)
+        
+            # Reset the time counter and bucket to prevent resetting the
+            # bucket at the beginning of the next iteration, and after the
+            # dispatching of the current task.
+            self._rpm_last_refresh_time += self._time_limit
+            self._request_bucket = self._max_rpm
+        
+        elif 0 > self._token_bucket - current.request_tokens:
+            # TPM limit exceeded. Wait until tokens reset.
+            logging.debug(
+                f"TPM limit exceeded: "\
+                f"Token bucket: {self._token_bucket}, "\
+                f"Pending tokens: {current.request_tokens}"
+                )
+            elapsed = tpm_elapsed_time
+            logging.debug(
+                "Waiting {:.2f} seconds for bucket refresh"\
+                    .format(self._time_limit - elapsed + 10)
+                )
+            # Add 10 seconds to counteract the possible missmatch between the
+            # server and the client clocks.
+            await asyncio.sleep(self._time_limit - elapsed + 10)
+
+            # Reset the time counter and bucket to prevent resetting the
+            # bucket at the beginning of the next iteration, and after the
+            # dispatching of the current task.
+            self._tpm_last_refresh_time += self._time_limit
+            self._token_bucket = self._max_tpm
+        
+        else:
+            logging.debug(
+                f"No limits exceeded: "\
+                f"Request bucket: {self._request_bucket}, "\
+                f"Pending requests: {1}, "\
+                f"Token bucket: {self._token_bucket}, "\
+                f"Pending tokens: {current.request_tokens}"
+                )
+        
+        # Fetch the task to a server -------------------------------------------
+        async with aiohttp.ClientSession() as session:
+            logging.debug(
+                f"Fetching: "\
+                f"Target: {current.target}, "\
+                f"Tokens: {current.request_tokens}, "\
+                f"Priotity: {current.priority}"
+                )
+            try:
+                result = await current.post(session)
+
+            except aiohttp.ClientError as error:
+                logging.error(error)
+
+            else:
+                logging.debug("Status: {}".format(result))
+
+                # Update buckets ----------------------------------------------
+                if 0 > self._request_bucket - 1:
+                    self._request_bucket = 0
+                else:
+                    self._request_bucket -= 1
+                
+                if 0 > self._token_bucket - current.request_tokens:
+                    self._token_bucket = 0
+                else:
+                    self._token_bucket -= current.request_tokens
+                
+                # Remove the task from the queue -------------------------------
+                self.pop_task()
+
+                # Log bucket status -----------------------------------------
+                logging.debug(
+                    f"Request bucket: {self._request_bucket}, "\
+                    f"Token bucket: {self._token_bucket}"
+                    )
+
+        # Zero-sleep to allow underlying connections to close ------------------
+        await asyncio.sleep(0)
+    
+    # -------------------------------------------------------------------------
+    # Method: print_queue
+    # -------------------------------------------------------------------------
+    #
+    # Description:
+    #
+    # Parameters:
+    #
+    # Returns:
+    #
+    # -------------------------------------------------------------------------
+    def print_queue(self) -> None:
+        """TODO: Put method docstring HERE."""
+        print("TaskPriorityQueue(")
+        print(f"\tmax_rpm={self._max_rpm},")
+        print(f"\tmax_tpm={self._max_tpm},")
+        print(f"\tqueue=[")
+        for task in self._queue:
+            print(f"\t\t{task.__repr__()},")
+        print(f"\t]")
+        print(")")
 
 
 # =============================================================================
-# User functions section
+# Main function section
 # =============================================================================
+async def main():
+    max_rpm = 5
+    max_tpm = 5
+    target = "http://localhost:8000/post"
+
+    # Create the task queue ----------------------------------------------------
+    task_queue = TaskPriorityQueue(max_rpm, max_tpm)
+
+    # Add tasks to the queue ---------------------------------------------------
+    task_queue.add_task(PendingTask(priority=0, target=target))
+    task_queue.add_task(PendingTask(
+        priority=2,
+        target=target,
+        total_tokens=5,
+        request_tokens=5
+        ))
+    task_queue.add_task(PendingTask(
+        priority=1,
+        target=target,
+        total_tokens=2,
+        request_tokens=2
+        ))
+    task_queue.add_task(PendingTask(
+        priority=3,
+        target=target,
+        total_tokens=4,
+        request_tokens=4
+        ))
+    
+    # Print the task queue -----------------------------------------------------
+    task_queue.print_queue()
+
+    # Consume the task queue ---------------------------------------------------
+    while not task_queue.is_empty():
+        await task_queue.consume()
 
 
 # =============================================================================
 # Main program section
 # =============================================================================
-async def main():
-    # Modules import section --------------------------------------------------
-    from random import randint
-
-    # Define the target URL for the server and Max RPM and Max TPM ----------
-    target = "http://localhost:8000"
-    max_rpm = 5
-    max_tpm = 5
-
-    # Set client pool --------------------------------------------------------
-    client_pool = [
-        "192.168.0.1", "192.168.0.2", "192.168.0.3", "192.168.0.4",
-        "192.168.0.31", "192.168.0.32", "192.168.0.33", "192.168.0.34",
-        "192.168.0.71", "192.168.0.72", "192.168.0.73", "192.168.0.74"
-    ]
-
-    # Create a ServerRequestManager object -----------------------------------
-    manager = ServerRequestManager(max_rpm, max_tpm)
-
-    # Create a PendingTaskQueue object ---------------------------------------
-    queue = PendingTaskQueue()
-
-    # Populate the queue -----------------------------------------------------
-    for i in range(100):
-        total_tokens = randint(1, 5)
-        task = PendingTask(
-            randint(0, 5),
-            target + "/request",
-            client_pool[randint(0, len(client_pool) - 1)],
-            total_tokens,
-            randint(1, total_tokens)
-            )
-        queue.push(task)
-    
-    # Print the queue --------------------------------------------------------
-    print(queue.__repr__() + "\n")
-
-    # Fetch tasks from the queue ---------------------------------------------
-    while 0 < len(queue._queue):
-        task = queue.pop()
-        await manager.fetch_task(task)
-
-
-# =============================================================================
-#  __main__ section
-# =============================================================================
 if __name__ == "__main__":
     asyncio.run(main())
 
 
-# End of file "AsynchronousRequestClient.py"
+# End of file: 'ClientBot.py'
