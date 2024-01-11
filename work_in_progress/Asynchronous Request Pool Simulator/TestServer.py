@@ -301,13 +301,24 @@ async def process_post(post: ClientPost, request: Request):
     """TODO: Add function docstring."""
 
     # If the IP address is not in the bucket table, add it
-    if request.client.host not in _bucket_table:
-        _bucket_table[request.client.host] = TokenBucket(TPM)
+    if request.client is not None:
+        if request.client.host not in _bucket_table:
+            _bucket_table[request.client.host] = TokenBucket(TPM)
+    else:
+        if "Unknown" not in _bucket_table:
+            _bucket_table["Unknown"] = TokenBucket(TPM)
 
     # Consume tokens from the bucket
-    _logger.debug(f"Consuming {post.tokens} tokens from {request.client.host}.")
-
-    await _bucket_table[request.client.host].consume(post.tokens)
+    if request.client is not None:
+        _logger.debug(
+            f"Consuming {post.tokens} tokens from {request.client.host}."
+            )
+        await _bucket_table[request.client.host].consume(post.tokens)
+    else:
+        _logger.debug(
+            f"Consuming {post.tokens} tokens from Unknown."
+            )
+        await _bucket_table["Unknown"].consume(post.tokens)
 
 
 # =============================================================================

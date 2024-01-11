@@ -64,11 +64,17 @@
 # =============================================================================
 # Modules import section
 # =============================================================================
+from math import log
+import re
+import token
+from turtle import left
+from urllib import request
 import aiohttp
 import asyncio
 import heapq
 import logging
 from pprint import pprint
+from matplotlib.pylab import f
 from pydantic import BaseModel, Field
 from time import perf_counter
 from typing import Generator
@@ -141,23 +147,38 @@ class TimedResourceBucket:
         return self._bucket
     
     @property
+    def tokens_left(self) -> int:
+        return self._bucket
+    
+    @property
+    def tokens_consumed(self) -> int:
+        return self._capacity - self._bucket
+    
+    @property
     def timer_cycle(self) -> float:
         return self._timer_cycle
     
     @property
-    def timer(self) -> float:
-        if "_timer" not in self.__dict__:
-            return self._timer_cycle
+    def time_elapsed(self) -> float:
+        if "_timer" in self.__dict__:
+            return perf_counter() - self._timer
         else:
-            return self._timer_cycle - (perf_counter() - self._timer)
+            return 0.0
     
-    def init_timer(self) -> None:
+    @property
+    def time_remaining(self) -> float:
+        if "_timer" in self.__dict__:
+            return self._timer_cycle - self.time_elapsed
+        else:
+            return self._timer_cycle
+        
+    def start_timer(self) -> None:
         if "_timer" not in self.__dict__:
             self._timer = perf_counter()
     
     def reset(self) -> None:
         if "_timer" in self.__dict__:
-            if self.timer <= 0:
+            if self.time_remaining <= 0:
                 self._timer += (
                     (perf_counter() - self._timer)
                     // self._timer_cycle
@@ -525,13 +546,8 @@ class TaskPriorityQueue:
     """TODO: Put class docstring HERE.
     """
     _queue: list
-    _max_rpm: int
-    _request_bucket: int
-    _max_tpm: int
-    _token_bucket: int
-    _timer_cycle: float = 60.0  # 1 minute
-    _request_timer: float
-    _token_timer: float
+    _request_bucket: TimedResourceBucket
+    _token_bucket: TimedResourceBucket
 
     # -------------------------------------------------------------------------
     # Method: __init__
@@ -544,21 +560,37 @@ class TaskPriorityQueue:
     # Returns:
     #
     # -------------------------------------------------------------------------
-    def __init__(self, max_rpm: int, max_tpm: int) -> None:
+    def __init__(self,
+            request_timer_cycle: float,
+            token_timer_cycle: float,
+            request_capacity: int,
+            token_capacity: int
+            ) -> None:
         """TODO: Put method docstring HERE."""
 
         # Validate the input data ----------------------------------------------
         class Validator(BaseModel):
-            max_rpm: int = Field(default=1, ge=1)
-            max_tpm: int = Field(default=1, ge=1)
-        validator = Validator(max_rpm=max_rpm, max_tpm=max_tpm)
+            request_timer_cycle: float = Field(default=60.0, ge=1.0)
+            token_timer_cycle: float = Field(default=60.0, ge=1.0)
+            request_capacity: int = Field(default=1, ge=1)
+            token_capacity: int = Field(default=1, ge=1)
+        v = Validator(
+            request_timer_cycle=request_timer_cycle,
+            token_timer_cycle=token_timer_cycle,
+            request_capacity=request_capacity,
+            token_capacity=token_capacity
+            )
 
         # Assign the validated data --------------------------------------------
         self._queue = []
-        self._max_rpm = validator.max_rpm
-        self._request_bucket = validator.max_rpm
-        self._max_tpm = validator.max_tpm
-        self._token_bucket = validator.max_tpm
+        self._request_bucket = TimedResourceBucket(
+            capacity=v.request_capacity,
+            timer_cycle=v.request_timer_cycle
+            )
+        self._token_bucket = TimedResourceBucket(
+            capacity=v.token_capacity,
+            timer_cycle=v.token_timer_cycle
+            )
     
     # -------------------------------------------------------------------------
     # Method: __repr__
@@ -572,15 +604,22 @@ class TaskPriorityQueue:
     #
     # -------------------------------------------------------------------------
     def __repr__(self) -> str:
-        result = f"TaskPriorityQueue("\
-                 f"max_rpm={self._max_rpm}, "\
-                 f"max_tpm={self._max_tpm}"\
-                 f"queue=["\
+        result = \
+            f"TaskPriorityQueue("\
+            f"\"Requests capacity\"={self._request_bucket.capacity}, "\
+            f"\"Requests timer cycle\"={self._request_bucket.timer_cycle}, "\
+            f"\"Tokens capacity\"={self._token_bucket.capacity}, "\
+            f"\"Tokens timer cycle\"={self._token_bucket.timer_cycle}, "\
+            f"queue=["\
 
-        for task in self._queue:
-            result += f"{task.__repr__()}, "
-
-        result = result[:-2] + f"])"
+        if not self.is_empty():
+            for task in self._queue:
+                result += f"{task.__repr__()}, "
+            result = result[:-2] + f"])"
+        else:
+            result += f"])"
+        
+        return result
     
     # -------------------------------------------------------------------------
     # Method: __str__
@@ -595,10 +634,12 @@ class TaskPriorityQueue:
     # -------------------------------------------------------------------------
     def __str__(self) -> str:
         return f"TaskPriorityQueue("\
-               f"{self._max_rpm}, "\
-               f"{self._max_tpm}, "\
-               f"{len(self._queue)}"\
-               f")"
+            f"{self._request_bucket.capacity}, "\
+            f"{self._request_bucket.timer_cycle}, "\
+            f"{self._token_bucket.capacity}, "\
+            f"{self._token_bucket.timer_cycle}, "\
+            f"{len(self._queue)}"\
+            f")"
     
     # -------------------------------------------------------------------------
     # Method: __len__
@@ -703,10 +744,11 @@ class TaskPriorityQueue:
             raise IndexError("index out of range")
         
         # Return the left child index ------------------------------------------
-        if self.is_empty() and len(self._queue) - 1 == index:
+        left_child_index = 2 * index + 1
+        if self.is_empty() or len(self._queue) <= left_child_index:
             return -1
         else:
-            return 2 * index + 1
+            return left_child_index
     
     # -------------------------------------------------------------------------
     # Method: _get_right_child_index
@@ -729,10 +771,11 @@ class TaskPriorityQueue:
             raise IndexError("index out of range")
         
         # Return the right child index -----------------------------------------
-        if self.is_empty() and len(self._queue) - 1 == index:
+        right_child_index = 2 * index + 2
+        if self.is_empty() or len(self._queue) <= right_child_index:
             return -1
         else:
-            return 2 * index + 2
+            return right_child_index
     
     # -------------------------------------------------------------------------
     # Method: _swap
@@ -812,131 +855,19 @@ class TaskPriorityQueue:
             raise IndexError("index out of range")
         
         # Heapify the queue ----------------------------------------------------
-        if not self.is_empty() and index != len(self._queue) - 1:
+        if not self.is_empty() and len(self._queue) - 1 > index:
             left_child_index = self._get_left_child_index(index)
             right_child_index = self._get_right_child_index(index)
             if left_child_index >= 0 \
-                    and self._queue[index] < self._queue[left_child_index]:
+                    and self._queue[left_child_index] > self._queue[index]:
                 self._swap(index, left_child_index)
-                self._heapify_down(left_child_index)
+                if 0 > left_child_index and len(self._queue) - 1 > left_child_index:
+                    self._heapify_down(left_child_index)
             elif right_child_index >= 0 \
-                    and self._queue[index] < self._queue[right_child_index]:
+                    and self._queue[right_child_index] > self._queue[index]:
                 self._swap(index, right_child_index)
-                self._heapify_down(right_child_index)
-
-    # -------------------------------------------------------------------------
-    # Method: _init_request_timer
-    # -------------------------------------------------------------------------
-    #
-    # Description:
-    #
-    # Parameters:
-    #
-    # Returns:
-    #
-    # -------------------------------------------------------------------------
-    def _init_request_timer(self) -> None:
-        """TODO: Put method docstring HERE."""
-        if "_request_timer" not in self.__dict__:
-            self._request_timer = perf_counter()
-
-    # -------------------------------------------------------------------------
-    # Method: _init_token_timer
-    # -------------------------------------------------------------------------
-    #
-    # Description:
-    #
-    # Parameters:
-    #
-    # Returns:
-    #
-    # -------------------------------------------------------------------------
-    def _init_token_timer(self) -> None:
-        """TODO: Put method docstring HERE."""
-        if "_token_timer" not in self.__dict__:
-            self._token_timer = perf_counter()
-
-    # -------------------------------------------------------------------------
-    # Method: _request_timer_counter
-    # -------------------------------------------------------------------------
-    #
-    # Description:
-    #
-    # Parameters:
-    #
-    # Returns:
-    #
-    # -------------------------------------------------------------------------
-    def _request_timer_counter(self) -> float:
-        """TODO: Put method docstring HERE."""
-
-        if "_request_timer" not in self.__dict__:
-            return self._timer_cycle
-        else:
-            return self._timer_cycle - (perf_counter() - self._request_timer)
-
-    # -------------------------------------------------------------------------
-    # Method: _token_timer_counter
-    # -------------------------------------------------------------------------
-    #
-    # Description:
-    #
-    # Parameters:
-    #
-    # Returns:
-    #
-    # -------------------------------------------------------------------------
-    def _token_timer_counter(self) -> float:
-        """TODO: Put method docstring HERE."""
-
-        if "_token_timer" not in self.__dict__:
-            return self._timer_cycle
-        else:
-            return self._timer_cycle - (perf_counter() - self._token_timer)
-
-    # -------------------------------------------------------------------------
-    # Property: _reset_request_counters
-    # -------------------------------------------------------------------------
-    #
-    # Description:
-    #
-    # Parameters:
-    #
-    # Returns:
-    #
-    # -------------------------------------------------------------------------
-    def _reset_request_counters(self) -> None:
-        """TODO: Put method docstring HERE."""
-
-        if "_request_timer" in self.__dict__:
-            if self._request_timer_counter() <= 0:
-                self._request_timer += (
-                    (perf_counter() - self._request_timer)
-                    // self._timer_cycle
-                    ) * self._timer_cycle
-                self._request_bucket = self._max_rpm
-
-    # -------------------------------------------------------------------------
-    # Property: _reset_token_counters
-    # -------------------------------------------------------------------------
-    #
-    # Description:
-    #
-    # Parameters:
-    #
-    # Returns:
-    #
-    # -------------------------------------------------------------------------
-    def _reset_token_counters(self) -> None:
-        """TODO: Put method docstring HERE."""
-
-        if "_token_timer" in self.__dict__:
-            if self._token_timer_counter() <= 0:
-                self._token_timer += (
-                    (perf_counter() - self._token_timer)
-                    // self._timer_cycle
-                    ) * self._timer_cycle
-                self._token_bucket = self._max_tpm
+                if 0 > right_child_index and len(self._queue) - 1 > right_child_index:
+                    self._heapify_down(right_child_index)
 
     # -------------------------------------------------------------------------
     # Method: add
@@ -1036,119 +967,63 @@ class TaskPriorityQueue:
             return
 
         # Initialize the time counters if first time consuming the queue ------
-        self._init_request_timer()
-        self._init_token_timer()
+        logging.debug("Consuming the queue")
+        self._request_bucket.start_timer()
+        self._token_bucket.start_timer()
 
-        # Update the RPM -------------------------------------------------------
-        current_time = perf_counter()
-        rpm_elapsed_time = current_time - self._request_timer
-        logging.debug(f"RPM elapsed time: {rpm_elapsed_time:.2f} seconds")
-        if rpm_elapsed_time > self._timer_cycle:
-            logging.debug("Resetting RPM bucket")
-            self._request_bucket = self._max_rpm
-            # Ensure time counting is performed in equidistant intervals
-            self._request_timer += self._timer_cycle
-            rpm_elapsed_time = current_time - self._request_timer
-
-        # Update the TPM -------------------------------------------------------
-        current_time = perf_counter()
-        tpm_elapsed_time = current_time - self._token_timer
-        logging.debug(f"TPM elapsed time: {tpm_elapsed_time:.2f} seconds")
-        if tpm_elapsed_time > self._timer_cycle:
-            logging.debug("Resetting TPM bucket")
-            self._token_bucket = self._max_tpm
-            # Ensure time counting is performed in equidistant intervals
-            self._token_timer += self._timer_cycle
-            tpm_elapsed_time = current_time - self._token_timer
+        # Check bucket timers --------------------------------------------------
+        if 0 > self._request_bucket.time_remaining:
+            logging.debug("Resetting the request bucket")
+            self._request_bucket.reset()
+        if 0 > self._token_bucket.time_remaining:
+            logging.debug("Resetting the token bucket")
+            self._token_bucket.reset()
+        logging.debug(
+            f"Timers: [{self._request_bucket.time_remaining:.2f}, "\
+            f"{self._token_bucket.time_remaining:.2f}], "\
+            f"Tokens: [{self._request_bucket.tokens_left}, "\
+            f"{self._token_bucket.tokens_left}]"
+            )
 
         # Get current task -----------------------------------------------------
         current = self.peek()
 
-        # Pause consumation if limits are reached ------------------------------
-        if 0 > self._request_bucket - 1 \
-                and 0 > self._token_bucket - current.request_tokens:
-            # Both limits exceeded. Wait until both reset.
-            logging.debug(
-                f"Both limits exceeded: "\
-                f"Request bucket: {self._request_bucket}, "\
-                f"Pending requests: {1}, "\
-                f"Token bucket: {self._token_bucket}, "\
-                f"Pending tokens: {current.request_tokens}"
-                )
-            elapsed = min(rpm_elapsed_time, tpm_elapsed_time)
-            logging.debug(
-                "Waiting {:.2f} seconds for bucket refresh"\
-                    .format(self._timer_cycle - elapsed + 10)
-                )
+        # Pause consumation if not enough tokens -------------------------------
+        if 0 > self._request_bucket.tokens_left - 1:
             # Add 10 seconds to counteract the possible missmatch between the
             # server and the client clocks.
-            await asyncio.sleep(self._timer_cycle - elapsed + 10)
+            logging.debug(
+                f"Request bucket exhausted. Pausing for "\
+                f"{self._request_bucket.time_remaining + 10:.2f} seconds."
+                )
+            await asyncio.sleep(self._request_bucket.time_remaining + 10)
+        
+            # Reset the time counters and buckets to prevent resetting the
+            # buckets at the beginning of the next iteration, and after the
+            # dispatching of the current task.
+            self._request_bucket.reset()
+        
+        elif 0 > self._token_bucket.tokens_left - current.request_tokens:
+            # Add 10 seconds to counteract the possible missmatch between the
+            # server and the client clocks.
+            logging.debug(
+                f"Token bucket exhausted. Pausing for "\
+                f"{self._token_bucket.time_remaining + 10:.2f} seconds."
+                )
+            await asyncio.sleep(self._token_bucket.time_remaining + 10)
 
             # Reset the time counters and buckets to prevent resetting the
             # buckets at the beginning of the next iteration, and after the
             # dispatching of the current task.
-            self._request_timer += self._timer_cycle
-            self._token_timer += self._timer_cycle
-            self._request_bucket = self._max_rpm
-            self._token_bucket = self._max_tpm
-        
-        elif 0 > self._request_bucket - 1:
-            # RPM limit exceeded. Wait until reset.
-            logging.debug(
-                f"RPM limit exceeded: "\
-                f"Request bucket: {self._request_bucket}, "\
-                f"Pending requests: {1}"
-                )
-            elapsed = rpm_elapsed_time
-            logging.debug(
-                "Waiting {:.2f} seconds for bucket refresh"\
-                    .format(self._timer_cycle - elapsed + 10)
-                )
-            # Add 10 seconds to counteract the possible missmatch between the
-            # server and the client clocks.
-            await asyncio.sleep(self._timer_cycle - elapsed + 10)
-        
-            # Reset the time counter and bucket to prevent resetting the
-            # bucket at the beginning of the next iteration, and after the
-            # dispatching of the current task.
-            self._request_timer += self._timer_cycle
-            self._request_bucket = self._max_rpm
-        
-        elif 0 > self._token_bucket - current.request_tokens:
-            # TPM limit exceeded. Wait until tokens reset.
-            logging.debug(
-                f"TPM limit exceeded: "\
-                f"Token bucket: {self._token_bucket}, "\
-                f"Pending tokens: {current.request_tokens}"
-                )
-            elapsed = tpm_elapsed_time
-            logging.debug(
-                "Waiting {:.2f} seconds for bucket refresh"\
-                    .format(self._timer_cycle - elapsed + 10)
-                )
-            # Add 10 seconds to counteract the possible missmatch between the
-            # server and the client clocks.
-            await asyncio.sleep(self._timer_cycle - elapsed + 10)
-
-            # Reset the time counter and bucket to prevent resetting the
-            # bucket at the beginning of the next iteration, and after the
-            # dispatching of the current task.
-            self._token_timer += self._timer_cycle
-            self._token_bucket = self._max_tpm
+            self._token_bucket.reset()
         
         else:
-            logging.debug(
-                f"No limits exceeded: "\
-                f"Request bucket: {self._request_bucket}, "\
-                f"Pending requests: {1}, "\
-                f"Token bucket: {self._token_bucket}, "\
-                f"Pending tokens: {current.request_tokens}"
-                )
-        
-        # Fetch the task to a server -------------------------------------------
+            pass
+
+        # Dispatch the task to the server -------------------------------------
         async with aiohttp.ClientSession() as session:
             logging.debug(
-                f"Fetching: "\
+                f"Dispatching: "\
                 f"Target: {current.target}, "\
                 f"Tokens: {current.request_tokens}, "\
                 f"Priotity: {current.priority}"
@@ -1163,24 +1038,11 @@ class TaskPriorityQueue:
                 logging.debug("Status: {}".format(result))
 
                 # Update buckets ----------------------------------------------
-                if 0 > self._request_bucket - 1:
-                    self._request_bucket = 0
-                else:
-                    self._request_bucket -= 1
-                
-                if 0 > self._token_bucket - current.request_tokens:
-                    self._token_bucket = 0
-                else:
-                    self._token_bucket -= current.request_tokens
+                self._request_bucket.consume(1)
+                self._token_bucket.consume(current.request_tokens)
                 
                 # Remove the task from the queue -------------------------------
                 self.pop()
-
-                # Log bucket status -----------------------------------------
-                logging.debug(
-                    f"Request bucket: {self._request_bucket}, "\
-                    f"Token bucket: {self._token_bucket}"
-                    )
 
         # Zero-sleep to allow underlying connections to close ------------------
         await asyncio.sleep(0)
@@ -1215,39 +1077,24 @@ class TaskPriorityQueue:
         """TODO: Put method docstring HERE."""
         raise NotImplementedError
 
-    # -------------------------------------------------------------------------
-    # Method: print_queue
-    # -------------------------------------------------------------------------
-    #
-    # Description:
-    #
-    # Parameters:
-    #
-    # Returns:
-    #
-    # -------------------------------------------------------------------------
-    def print_queue(self) -> None:
-        """TODO: Put method docstring HERE."""
-        print("TaskPriorityQueue(")
-        print(f"\tmax_rpm={self._max_rpm},")
-        print(f"\tmax_tpm={self._max_tpm},")
-        print(f"\tqueue=[")
-        for task in self._queue:
-            print(f"\t\t{task.__repr__()},")
-        print(f"\t]")
-        print(")")
-
 
 # =============================================================================
 # Main function section
 # =============================================================================
 async def main():
-    max_rpm = 5
-    max_tpm = 5
     target = "http://localhost:8000/post"
+    request_timer_cycle = 60.0
+    token_timer_cycle = 60.0
+    request_capacity = 5
+    token_capacity = 5
 
     # Create the task queue ----------------------------------------------------
-    task_queue = TaskPriorityQueue(max_rpm, max_tpm)
+    task_queue = TaskPriorityQueue(
+        request_timer_cycle,
+        token_timer_cycle,
+        request_capacity,
+        token_capacity
+        )
 
     # Add tasks to the queue ---------------------------------------------------
     task_queue.add(PendingTask(priority=0, target=target))
@@ -1271,7 +1118,7 @@ async def main():
         ))
     
     # Print the task queue -----------------------------------------------------
-    task_queue.print_queue()
+    logging.debug(task_queue._queue)
 
     # Consume the task queue ---------------------------------------------------
     while not task_queue.is_empty():
