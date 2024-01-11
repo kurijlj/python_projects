@@ -71,6 +71,7 @@ import logging
 from pprint import pprint
 from pydantic import BaseModel, Field
 from time import perf_counter
+from typing import Generator
 
 
 # =============================================================================
@@ -86,6 +87,88 @@ logging.basicConfig(
 # =============================================================================
 # User classes section
 # =============================================================================
+
+# -----------------------------------------------------------------------------
+# Class: TimedResourceBucket
+# -----------------------------------------------------------------------------
+#
+# Description:
+#
+# Attributes:
+#
+# Methods:
+#
+# -----------------------------------------------------------------------------
+class TimedResourceBucket:
+    """TODO: Put class docstring HERE.
+    """
+    _capacity: int
+    _bucket: int
+    _timer_cycle: float
+    _timer: float
+
+    # -------------------------------------------------------------------------
+    # Method: __init__
+    # -------------------------------------------------------------------------
+    #
+    # Description:
+    #
+    # Parameters:
+    #
+    # Returns:
+    #
+    # -------------------------------------------------------------------------
+    def __init__(self, capacity: int, timer_cycle: float) -> None:
+        """TODO: Put method docstring HERE."""
+
+        # Validate the input data ----------------------------------------------
+        class Validator(BaseModel):
+            capacity: int = Field(default=1, ge=1)
+            timer_cycle: float = Field(default=60.0, ge=1.0)
+        validator = Validator(capacity=capacity, timer_cycle=timer_cycle)
+
+        # Assign the validated data --------------------------------------------
+        self._capacity = validator.capacity
+        self._bucket = validator.capacity
+        self._timer_cycle = validator.timer_cycle
+    
+    @property
+    def capacity(self) -> int:
+        return self._capacity
+    
+    @property
+    def bucket(self) -> int:
+        return self._bucket
+    
+    @property
+    def timer_cycle(self) -> float:
+        return self._timer_cycle
+    
+    @property
+    def timer(self) -> float:
+        if "_timer" not in self.__dict__:
+            return self._timer_cycle
+        else:
+            return self._timer_cycle - (perf_counter() - self._timer)
+    
+    def init_timer(self) -> None:
+        if "_timer" not in self.__dict__:
+            self._timer = perf_counter()
+    
+    def reset(self) -> None:
+        if "_timer" in self.__dict__:
+            if self.timer <= 0:
+                self._timer += (
+                    (perf_counter() - self._timer)
+                    // self._timer_cycle
+                    ) * self._timer_cycle
+                self._bucket = self._capacity
+    
+    def consume(self, tokens: int) -> None:
+        if self._bucket - tokens < 0:
+            self._bucket = 0
+        else:
+            self._bucket -= tokens
 
 # -----------------------------------------------------------------------------
 # Class: PendingTask
@@ -442,13 +525,13 @@ class TaskPriorityQueue:
     """TODO: Put class docstring HERE.
     """
     _queue: list
-    _time_limit: float = 60.0  # 1 minute
     _max_rpm: int
     _request_bucket: int
     _max_tpm: int
     _token_bucket: int
-    _rpm_last_refresh_time: float
-    _tpm_last_refresh_time: float
+    _timer_cycle: float = 60.0  # 1 minute
+    _request_timer: float
+    _token_timer: float
 
     # -------------------------------------------------------------------------
     # Method: __init__
@@ -518,7 +601,7 @@ class TaskPriorityQueue:
                f")"
     
     # -------------------------------------------------------------------------
-    # Method: add_task
+    # Method: __len__
     # -------------------------------------------------------------------------
     #
     # Description:
@@ -528,7 +611,345 @@ class TaskPriorityQueue:
     # Returns:
     #
     # -------------------------------------------------------------------------
-    def add_task(self, task: PendingTask) -> None:
+    def __len__(self) -> int:
+        return len(self._queue)
+
+    # -------------------------------------------------------------------------
+    # Method: __iter__
+    # -------------------------------------------------------------------------
+    #
+    # Description:
+    #
+    # Parameters:
+    #
+    # Returns:
+    #
+    # -------------------------------------------------------------------------
+    def __iter__(self) -> Generator[PendingTask, None, None]:
+        """TODO: Put method docstring HERE."""
+        for task in self._queue:
+            yield task
+
+    # -------------------------------------------------------------------------
+    # Method: __getitem__
+    # -------------------------------------------------------------------------
+    #
+    # Description:
+    #
+    # Parameters:
+    #
+    # Returns:
+    #
+    # -------------------------------------------------------------------------
+    def __getitem__(self, index: int) -> PendingTask:
+        """TODO: Put method docstring HERE."""
+
+        # Check if the index is valid ------------------------------------------
+        if not isinstance(index, int):
+            raise TypeError("index must be an integer")
+        if index < 0 or index >= len(self._queue):
+            raise IndexError("index out of range")
+        
+        # Return the task ------------------------------------------------------
+        if self.is_empty():
+            return PendingTask()
+        else:
+            return self._queue[index]
+    
+    # -------------------------------------------------------------------------
+    # Method: _get_parent_index
+    # -------------------------------------------------------------------------
+    #
+    # Description:
+    #
+    # Parameters:
+    #
+    # Returns:
+    #
+    # -------------------------------------------------------------------------
+    def _get_parent_index(self, index: int) -> int:
+        """TODO: Put method docstring HERE."""
+        
+        # Check if the index is valid ------------------------------------------
+        if not isinstance(index, int):
+            raise TypeError("index must be an integer")
+        if index < 0 or index >= len(self._queue):
+            raise IndexError("index out of range")
+        
+        # Return the parent index ----------------------------------------------
+        if self.is_empty():
+            return -1
+        else:
+            return (index - 1) // 2
+    
+    # -------------------------------------------------------------------------
+    # Method: _get_left_child_index
+    # -------------------------------------------------------------------------
+    #
+    # Description:
+    #
+    # Parameters:
+    #
+    # Returns:
+    #
+    # -------------------------------------------------------------------------
+    def _get_left_child_index(self, index: int) -> int:
+        """TODO: Put method docstring HERE."""
+        
+        # Check if the index is valid ------------------------------------------
+        if not isinstance(index, int):
+            raise TypeError("index must be an integer")
+        if index < 0 or index >= len(self._queue):
+            raise IndexError("index out of range")
+        
+        # Return the left child index ------------------------------------------
+        if self.is_empty() and len(self._queue) - 1 == index:
+            return -1
+        else:
+            return 2 * index + 1
+    
+    # -------------------------------------------------------------------------
+    # Method: _get_right_child_index
+    # -------------------------------------------------------------------------
+    #
+    # Description:
+    #
+    # Parameters:
+    #
+    # Returns:
+    #
+    # -------------------------------------------------------------------------
+    def _get_right_child_index(self, index: int) -> int:
+        """TODO: Put method docstring HERE."""
+        
+        # Check if the index is valid ------------------------------------------
+        if not isinstance(index, int):
+            raise TypeError("index must be an integer")
+        if index < 0 or index >= len(self._queue):
+            raise IndexError("index out of range")
+        
+        # Return the right child index -----------------------------------------
+        if self.is_empty() and len(self._queue) - 1 == index:
+            return -1
+        else:
+            return 2 * index + 2
+    
+    # -------------------------------------------------------------------------
+    # Method: _swap
+    # -------------------------------------------------------------------------
+    #
+    # Description:
+    #
+    # Parameters:
+    #
+    # Returns:
+    #
+    # -------------------------------------------------------------------------
+    def _swap(self, index1: int, index2: int) -> None:
+        """TODO: Put method docstring HERE."""
+
+        # Check if the indices are valid ---------------------------------------
+        if not isinstance(index1, int):
+            raise TypeError("index1 must be an integer")
+        if index1 < 0 or index1 >= len(self._queue):
+            raise IndexError("index1 out of range")
+        if not isinstance(index2, int):
+            raise TypeError("index2 must be an integer")
+        if index2 < 0 or index2 >= len(self._queue):
+            raise IndexError("index2 out of range")
+        
+        # Swap the tasks -------------------------------------------------------
+        if not self.is_empty() and index1 != index2:
+            self._queue[index1], self._queue[index2] = \
+                self._queue[index2], self._queue[index1]
+    
+    # -------------------------------------------------------------------------
+    # Method: _heapify_up
+    # -------------------------------------------------------------------------
+    #
+    # Description:
+    #
+    # Parameters:
+    #
+    # Returns:
+    #
+    # -------------------------------------------------------------------------
+    def _heapify_up(self, index: int) -> None:
+        """"TODO: Put method docstring HERE."""
+
+        # Check if the index is valid ------------------------------------------
+        if not isinstance(index, int):
+            raise TypeError("index must be an integer")
+        if index < 0 or index >= len(self._queue):
+            raise IndexError("index out of range")
+        
+        # Heapify the queue ----------------------------------------------------
+        if not self.is_empty():
+            parent_index = self._get_parent_index(index)
+            if parent_index >= 0 \
+                    and self._queue[index] > self._queue[parent_index]:
+                self._swap(index, parent_index)
+                self._heapify_up(parent_index)
+
+    # -------------------------------------------------------------------------
+    # Method: _heapify_down
+    # -------------------------------------------------------------------------
+    #
+    # Description:
+    #
+    # Parameters:
+    #
+    # Returns:
+    #
+    # -------------------------------------------------------------------------
+    def _heapify_down(self, index: int) -> None:
+        """TODO: Put method docstring HERE."""
+
+        # Check if the index is valid ------------------------------------------
+        if not isinstance(index, int):
+            raise TypeError("index must be an integer")
+        if index < 0 or index >= len(self._queue):
+            raise IndexError("index out of range")
+        
+        # Heapify the queue ----------------------------------------------------
+        if not self.is_empty() and index != len(self._queue) - 1:
+            left_child_index = self._get_left_child_index(index)
+            right_child_index = self._get_right_child_index(index)
+            if left_child_index >= 0 \
+                    and self._queue[index] < self._queue[left_child_index]:
+                self._swap(index, left_child_index)
+                self._heapify_down(left_child_index)
+            elif right_child_index >= 0 \
+                    and self._queue[index] < self._queue[right_child_index]:
+                self._swap(index, right_child_index)
+                self._heapify_down(right_child_index)
+
+    # -------------------------------------------------------------------------
+    # Method: _init_request_timer
+    # -------------------------------------------------------------------------
+    #
+    # Description:
+    #
+    # Parameters:
+    #
+    # Returns:
+    #
+    # -------------------------------------------------------------------------
+    def _init_request_timer(self) -> None:
+        """TODO: Put method docstring HERE."""
+        if "_request_timer" not in self.__dict__:
+            self._request_timer = perf_counter()
+
+    # -------------------------------------------------------------------------
+    # Method: _init_token_timer
+    # -------------------------------------------------------------------------
+    #
+    # Description:
+    #
+    # Parameters:
+    #
+    # Returns:
+    #
+    # -------------------------------------------------------------------------
+    def _init_token_timer(self) -> None:
+        """TODO: Put method docstring HERE."""
+        if "_token_timer" not in self.__dict__:
+            self._token_timer = perf_counter()
+
+    # -------------------------------------------------------------------------
+    # Method: _request_timer_counter
+    # -------------------------------------------------------------------------
+    #
+    # Description:
+    #
+    # Parameters:
+    #
+    # Returns:
+    #
+    # -------------------------------------------------------------------------
+    def _request_timer_counter(self) -> float:
+        """TODO: Put method docstring HERE."""
+
+        if "_request_timer" not in self.__dict__:
+            return self._timer_cycle
+        else:
+            return self._timer_cycle - (perf_counter() - self._request_timer)
+
+    # -------------------------------------------------------------------------
+    # Method: _token_timer_counter
+    # -------------------------------------------------------------------------
+    #
+    # Description:
+    #
+    # Parameters:
+    #
+    # Returns:
+    #
+    # -------------------------------------------------------------------------
+    def _token_timer_counter(self) -> float:
+        """TODO: Put method docstring HERE."""
+
+        if "_token_timer" not in self.__dict__:
+            return self._timer_cycle
+        else:
+            return self._timer_cycle - (perf_counter() - self._token_timer)
+
+    # -------------------------------------------------------------------------
+    # Property: _reset_request_counters
+    # -------------------------------------------------------------------------
+    #
+    # Description:
+    #
+    # Parameters:
+    #
+    # Returns:
+    #
+    # -------------------------------------------------------------------------
+    def _reset_request_counters(self) -> None:
+        """TODO: Put method docstring HERE."""
+
+        if "_request_timer" in self.__dict__:
+            if self._request_timer_counter() <= 0:
+                self._request_timer += (
+                    (perf_counter() - self._request_timer)
+                    // self._timer_cycle
+                    ) * self._timer_cycle
+                self._request_bucket = self._max_rpm
+
+    # -------------------------------------------------------------------------
+    # Property: _reset_token_counters
+    # -------------------------------------------------------------------------
+    #
+    # Description:
+    #
+    # Parameters:
+    #
+    # Returns:
+    #
+    # -------------------------------------------------------------------------
+    def _reset_token_counters(self) -> None:
+        """TODO: Put method docstring HERE."""
+
+        if "_token_timer" in self.__dict__:
+            if self._token_timer_counter() <= 0:
+                self._token_timer += (
+                    (perf_counter() - self._token_timer)
+                    // self._timer_cycle
+                    ) * self._timer_cycle
+                self._token_bucket = self._max_tpm
+
+    # -------------------------------------------------------------------------
+    # Method: add
+    # -------------------------------------------------------------------------
+    #
+    # Description:
+    #
+    # Parameters:
+    #
+    # Returns:
+    #
+    # -------------------------------------------------------------------------
+    def add(self, task: PendingTask) -> None:
         """TODO: Put method docstring HERE."""
 
         # Validate the input data ----------------------------------------------
@@ -538,10 +959,11 @@ class TaskPriorityQueue:
                 )
 
         # Add the task to the queue --------------------------------------------
-        heapq.heappush(self._queue, task)
+        self._queue.append(task)
+        self._heapify_up(len(self._queue) - 1)
 
     # -------------------------------------------------------------------------
-    # Method: pop_task
+    # Method: pop
     # -------------------------------------------------------------------------
     #
     # Description:
@@ -551,14 +973,20 @@ class TaskPriorityQueue:
     # Returns:
     #
     # -------------------------------------------------------------------------
-    def pop_task(self) -> PendingTask:
+    def pop(self) -> PendingTask:
         """TODO: Put method docstring HERE."""
 
         # Pop the task from the queue ------------------------------------------
-        return heapq.heappop(self._queue)
+        if self.is_empty():
+            return PendingTask()
+        else:
+            self._swap(0, len(self._queue) - 1)
+            task = self._queue.pop()
+            self._heapify_down(0)
+            return task
 
     # -------------------------------------------------------------------------
-    # Method: peek_task
+    # Method: peek
     # -------------------------------------------------------------------------
     #
     # Description:
@@ -568,7 +996,7 @@ class TaskPriorityQueue:
     # Returns:
     #
     # -------------------------------------------------------------------------
-    def peek_task(self) -> PendingTask:
+    def peek(self) -> PendingTask:
         """TODO: Put method docstring HERE."""
 
         # Peek the task from the queue -----------------------------------------
@@ -590,7 +1018,7 @@ class TaskPriorityQueue:
         return 0 == len(self._queue)
 
     # -------------------------------------------------------------------------
-    # Method: consume
+    # Method: consume_top
     # -------------------------------------------------------------------------
     #
     # Description:
@@ -600,39 +1028,41 @@ class TaskPriorityQueue:
     # Returns:
     #
     # -------------------------------------------------------------------------
-    async def consume(self) -> None:
+    async def consume_top(self) -> None:
         """TODO: Put method docstring HERE."""
 
+        # Check if the queue is empty ------------------------------------------
+        if self.is_empty():
+            return
+
         # Initialize the time counters if first time consuming the queue ------
-        if "_rpm_last_refresh_time" not in self.__dict__:
-            logging.debug("Initializing counters")
-            self._rpm_last_refresh_time = perf_counter()
-            self._tpm_last_refresh_time = perf_counter()
+        self._init_request_timer()
+        self._init_token_timer()
 
         # Update the RPM -------------------------------------------------------
         current_time = perf_counter()
-        rpm_elapsed_time = current_time - self._rpm_last_refresh_time
+        rpm_elapsed_time = current_time - self._request_timer
         logging.debug(f"RPM elapsed time: {rpm_elapsed_time:.2f} seconds")
-        if rpm_elapsed_time > self._time_limit:
+        if rpm_elapsed_time > self._timer_cycle:
             logging.debug("Resetting RPM bucket")
             self._request_bucket = self._max_rpm
             # Ensure time counting is performed in equidistant intervals
-            self._rpm_last_refresh_time += self._time_limit
-            rpm_elapsed_time = current_time - self._rpm_last_refresh_time
+            self._request_timer += self._timer_cycle
+            rpm_elapsed_time = current_time - self._request_timer
 
         # Update the TPM -------------------------------------------------------
         current_time = perf_counter()
-        tpm_elapsed_time = current_time - self._tpm_last_refresh_time
+        tpm_elapsed_time = current_time - self._token_timer
         logging.debug(f"TPM elapsed time: {tpm_elapsed_time:.2f} seconds")
-        if tpm_elapsed_time > self._time_limit:
+        if tpm_elapsed_time > self._timer_cycle:
             logging.debug("Resetting TPM bucket")
             self._token_bucket = self._max_tpm
             # Ensure time counting is performed in equidistant intervals
-            self._tpm_last_refresh_time += self._time_limit
-            tpm_elapsed_time = current_time - self._tpm_last_refresh_time
+            self._token_timer += self._timer_cycle
+            tpm_elapsed_time = current_time - self._token_timer
 
         # Get current task -----------------------------------------------------
-        current = self.peek_task()
+        current = self.peek()
 
         # Pause consumation if limits are reached ------------------------------
         if 0 > self._request_bucket - 1 \
@@ -645,20 +1075,20 @@ class TaskPriorityQueue:
                 f"Token bucket: {self._token_bucket}, "\
                 f"Pending tokens: {current.request_tokens}"
                 )
-            elapsed = max(rpm_elapsed_time, tpm_elapsed_time)
+            elapsed = min(rpm_elapsed_time, tpm_elapsed_time)
             logging.debug(
                 "Waiting {:.2f} seconds for bucket refresh"\
-                    .format(self._time_limit - elapsed + 10)
+                    .format(self._timer_cycle - elapsed + 10)
                 )
             # Add 10 seconds to counteract the possible missmatch between the
             # server and the client clocks.
-            await asyncio.sleep(self._time_limit - elapsed + 10)
+            await asyncio.sleep(self._timer_cycle - elapsed + 10)
 
             # Reset the time counters and buckets to prevent resetting the
             # buckets at the beginning of the next iteration, and after the
             # dispatching of the current task.
-            self._rpm_last_refresh_time += self._time_limit
-            self._tpm_last_refresh_time += self._time_limit
+            self._request_timer += self._timer_cycle
+            self._token_timer += self._timer_cycle
             self._request_bucket = self._max_rpm
             self._token_bucket = self._max_tpm
         
@@ -672,16 +1102,16 @@ class TaskPriorityQueue:
             elapsed = rpm_elapsed_time
             logging.debug(
                 "Waiting {:.2f} seconds for bucket refresh"\
-                    .format(self._time_limit - elapsed + 10)
+                    .format(self._timer_cycle - elapsed + 10)
                 )
             # Add 10 seconds to counteract the possible missmatch between the
             # server and the client clocks.
-            await asyncio.sleep(self._time_limit - elapsed + 10)
+            await asyncio.sleep(self._timer_cycle - elapsed + 10)
         
             # Reset the time counter and bucket to prevent resetting the
             # bucket at the beginning of the next iteration, and after the
             # dispatching of the current task.
-            self._rpm_last_refresh_time += self._time_limit
+            self._request_timer += self._timer_cycle
             self._request_bucket = self._max_rpm
         
         elif 0 > self._token_bucket - current.request_tokens:
@@ -694,16 +1124,16 @@ class TaskPriorityQueue:
             elapsed = tpm_elapsed_time
             logging.debug(
                 "Waiting {:.2f} seconds for bucket refresh"\
-                    .format(self._time_limit - elapsed + 10)
+                    .format(self._timer_cycle - elapsed + 10)
                 )
             # Add 10 seconds to counteract the possible missmatch between the
             # server and the client clocks.
-            await asyncio.sleep(self._time_limit - elapsed + 10)
+            await asyncio.sleep(self._timer_cycle - elapsed + 10)
 
             # Reset the time counter and bucket to prevent resetting the
             # bucket at the beginning of the next iteration, and after the
             # dispatching of the current task.
-            self._tpm_last_refresh_time += self._time_limit
+            self._token_timer += self._timer_cycle
             self._token_bucket = self._max_tpm
         
         else:
@@ -744,7 +1174,7 @@ class TaskPriorityQueue:
                     self._token_bucket -= current.request_tokens
                 
                 # Remove the task from the queue -------------------------------
-                self.pop_task()
+                self.pop()
 
                 # Log bucket status -----------------------------------------
                 logging.debug(
@@ -755,6 +1185,36 @@ class TaskPriorityQueue:
         # Zero-sleep to allow underlying connections to close ------------------
         await asyncio.sleep(0)
     
+    # -------------------------------------------------------------------------
+    # Method: consume_top_n
+    # -------------------------------------------------------------------------
+    #
+    # Description:
+    #
+    # Parameters:
+    #
+    # Returns:
+    #
+    # -------------------------------------------------------------------------
+    async def consume_top_n(self) -> None:
+        """TODO: Put method docstring HERE."""
+        raise NotImplementedError
+
+    # -------------------------------------------------------------------------
+    # Method: consume_all
+    # -------------------------------------------------------------------------
+    #
+    # Description:
+    #
+    # Parameters:
+    #
+    # Returns:
+    #
+    # -------------------------------------------------------------------------
+    async def consume_all(self) -> None:
+        """TODO: Put method docstring HERE."""
+        raise NotImplementedError
+
     # -------------------------------------------------------------------------
     # Method: print_queue
     # -------------------------------------------------------------------------
@@ -790,20 +1250,20 @@ async def main():
     task_queue = TaskPriorityQueue(max_rpm, max_tpm)
 
     # Add tasks to the queue ---------------------------------------------------
-    task_queue.add_task(PendingTask(priority=0, target=target))
-    task_queue.add_task(PendingTask(
+    task_queue.add(PendingTask(priority=0, target=target))
+    task_queue.add(PendingTask(
         priority=2,
         target=target,
         total_tokens=5,
         request_tokens=5
         ))
-    task_queue.add_task(PendingTask(
+    task_queue.add(PendingTask(
         priority=1,
         target=target,
         total_tokens=2,
         request_tokens=2
         ))
-    task_queue.add_task(PendingTask(
+    task_queue.add(PendingTask(
         priority=3,
         target=target,
         total_tokens=4,
@@ -815,7 +1275,7 @@ async def main():
 
     # Consume the task queue ---------------------------------------------------
     while not task_queue.is_empty():
-        await task_queue.consume()
+        await task_queue.consume_top()
 
 
 # =============================================================================
