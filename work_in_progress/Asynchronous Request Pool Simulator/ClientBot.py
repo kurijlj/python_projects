@@ -35,6 +35,19 @@
 # =============================================================================
 #
 # TODO:
+# * In class PendingTask, add attributes: _request_count, _payload, _model.
+# * In class TaskPriorityQueue, method consume_top, add a check to see if the
+#   server is available. If not, pause the consumption of the queue until the
+#   server is available.
+# * In class TaskPriorityQueue, implement the methods consume_top_n and
+#   consume_all.
+# * Implement task queue as a server with a REST API for adding tasks to the
+#   queue.
+# * Implement a lifetime timer for the tasks in the queue. If the task is not
+#   completed within the lifetime, level up the priority of the task.
+# * Add docstrings to all classes and methods.
+# * Add comments to all methods.
+# * Add tests to all classes and methods.
 #
 # =============================================================================
 
@@ -207,8 +220,11 @@ class PendingTask:
     """
     _priority: int
     _target: str
-    _total_tokens: int
-    _request_tokens: int
+    _total_tokens: int    # Prompt + answer tokens
+    _request_tokens: int  # Prompt tokens (rename to _prompt_tokens)
+    _request_count: int   # Estimated number of requests that task will generate
+    _payload: dict
+    _model: str
 
     # -------------------------------------------------------------------------
     # Nested class: Validator
@@ -910,6 +926,8 @@ class TaskPriorityQueue:
         # Pop the task from the queue ------------------------------------------
         if self.is_empty():
             return PendingTask()
+        elif 1 == len(self._queue):
+            return self._queue.pop()
         else:
             self._swap(0, len(self._queue) - 1)
             task = self._queue.pop()
